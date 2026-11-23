@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Espresso Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #F2F4F5; --surface: #FFFFFF; --ink: #18212B; --muted: #5B6672;
+  --line: #D5DBE0; --signal: #1F5FBF; --signal-ink: #FFFFFF; --heat: #B5482B;
+  --warn: #B5482B; --ok: #2E7D4F; --grid: #E6EAED;
+  color-scheme: light;
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12171C; --surface: #1A2128; --ink: #E6EBEF; --muted: #8C98A4;
+    --line: #2B353F; --signal: #6FA3F0; --signal-ink: #0E1A2C; --heat: #E8826A;
+    --warn: #E07A5F; --ok: #5CC28A; --grid: #222B33;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12171C; --surface: #1A2128; --ink: #E6EBEF; --muted: #8C98A4;
+  --line: #2B353F; --signal: #6FA3F0; --signal-ink: #0E1A2C; --heat: #E8826A;
+  --warn: #E07A5F; --ok: #5CC28A; --grid: #222B33;
+  color-scheme: dark;
+}
+html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+*, *::before, *::after { box-sizing: inherit; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 15px; line-height: 1.45;
+}
+.wrap { max-width: 1240px; margin: 0 auto; padding: 20px clamp(12px, 3vw, 28px) 32px; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin-bottom: 18px; }
+h1 { font-size: 18px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+.status { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 14px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--line); flex: none; }
+.status.live .dot { background: var(--ok); }
+.status.err .dot { background: var(--warn); }
+.spacer { flex: 1; }
+select, input {
+  font: inherit; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; min-width: 0;
+}
+button {
+  font: inherit; font-weight: 500; cursor: pointer; border-radius: 6px; padding: 7px 14px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+}
+button.primary { background: var(--signal); border-color: var(--signal); color: var(--signal-ink); }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+.readouts {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 40px;
+  padding: 4px 0 18px; border-bottom: 1px solid var(--line); margin-bottom: 14px;
+}
+.reading h2 { font-size: 14px; font-weight: 500; color: var(--muted); margin: 0 0 2px; }
+.big {
+  font-size: clamp(48px, 7.5vw, 104px); font-weight: 500; line-height: 0.98; letter-spacing: -0.035em;
+  font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#weightBig { color: var(--signal); }
+#tempBig { color: var(--heat); }
+.big .unit { font-size: 0.34em; font-weight: 400; color: var(--muted); letter-spacing: 0; margin-left: 0.2em; }
+.big.idle { color: var(--muted) !important; }
+.big.fault { font-size: clamp(28px, 3.5vw, 44px); line-height: 1.6; }
+.stats { display: flex; flex-wrap: wrap; gap: 4px 24px; margin-top: 10px; font-variant-numeric: tabular-nums; }
+.stats div { display: flex; flex-direction: column; }
+.stats span:first-child { color: var(--muted); font-size: 13px; }
+.stats span:last-child { font-size: 16px; font-weight: 500; }
+
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 14px; }
+.toolbar label { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 14px; }
+.toolbar input[type=number] { width: 72px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; padding: 6px 12px; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+
+.plots { display: grid; gap: 12px; }
+.plot { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; height: clamp(190px, 28vh, 320px); position: relative; }
+.plot canvas { display: block; width: 100%; height: 100%; }
+.plot .label { position: absolute; top: 8px; right: 14px; font-size: 13px; color: var(--muted); pointer-events: none; }
+.empty {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  color: var(--muted); text-align: center; padding: 24px; pointer-events: none;
+}
+
+details { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); margin-top: 16px; }
+summary { cursor: pointer; padding: 10px 14px; font-weight: 500; }
+pre#console {
+  margin: 0; padding: 10px 14px; border-top: 1px solid var(--line); height: 170px; overflow: auto;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 12.5px; color: var(--muted);
+}
+.notice {
+  border: 1px solid var(--warn); color: var(--ink); border-radius: 10px; padding: 12px 14px; margin-bottom: 16px;
+  background: color-mix(in srgb, var(--warn) 8%, var(--surface));
+}
+.notice[hidden] { display: none; }
+.help { color: var(--muted); font-size: 13.5px; margin-top: 14px; max-width: 76ch; }
+
+@media (max-width: 700px) {
+  .readouts { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Espresso Monitor</h1>
+    <span class="status" id="status"><span class="dot"></span><span id="statusText">Not connected</span></span>
+    <span class="spacer"></span>
+    <button class="primary" id="connectBtn">Connect to ESP32</button>
+  </header>
+
+  <div class="notice" id="notice" hidden></div>
+
+  <section class="readouts">
+    <div class="reading">
+      <h2>Weight</h2>
+      <div class="big idle" id="weightBig">—</div>
+      <div class="stats">
+        <div><span>Min</span><span id="wMin">—</span></div>
+        <div><span>Max</span><span id="wMax">—</span></div>
+        <div><span>Average</span><span id="wAvg">—</span></div>
+      </div>
+    </div>
+    <div class="reading">
+      <h2>Temperature</h2>
+      <div class="big idle" id="tempBig">—</div>
+      <div class="stats">
+        <div><span>Min</span><span id="tMin">—</span></div>
+        <div><span>Max</span><span id="tMax">—</span></div>
+        <div><span>Average</span><span id="tAvg">—</span></div>
+        <div><span>Thermistor</span><span id="tOhms">—</span></div>
+        <div><span>ADC</span><span id="tMv">—</span></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="toolbar">
+    <button id="tareBtn" disabled>Tare / zero</button>
+    <div class="seg" role="group" aria-label="Temperature unit">
+      <button id="unitC" aria-pressed="true">°C</button>
+      <button id="unitF" aria-pressed="false">°F</button>
+    </div>
+    <label>Seconds shown <input type="number" id="window" value="60" min="5" step="5"></label>
+    <label><input type="checkbox" id="pause"> Pause plot</label>
+    <span class="spacer"></span>
+    <button id="clearBtn">Clear plot</button>
+    <button id="csvBtn" disabled>Save CSV</button>
+  </div>
+
+  <div class="plots">
+    <div class="plot">
+      <canvas id="weightChart"></canvas>
+      <span class="label">Weight (g)</span>
+      <div class="empty" id="empty">Connect your ESP32 and readings will appear here.</div>
+    </div>
+    <div class="plot">
+      <canvas id="tempChart"></canvas>
+      <span class="label" id="tempLabel">Temperature (°C)</span>
+    </div>
+  </div>
+
+  <details>
+    <summary>Raw serial data</summary>
+    <pre id="console"></pre>
+  </details>
+
+  <p class="help">Open this file in Chrome or Edge on a computer. Close the Arduino Serial Monitor and any other program using the ESP32’s port before connecting. “Tare / zero” sends TARE to the ESP32, so keep the scale empty while it runs. “Save CSV” saves everything received since you connected or last cleared the plot.</p>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const BAUD = 115200;
+  const TARE_TIMEOUT_MS = 8000;
+  const MAX_POINTS = 300000;
+
+  let port = null, reader = null, pipeDone = null, keepReading = false;
+  let ready = false, tareTimer = null;
+  let t0 = null;
+  const wT = [], wV = [];          // weight: seconds, grams
+  const tT = [], tV = [];          // temperature: seconds, celsius (NaN allowed)
+  const log = [];                  // CSV rows
+  let lastWeight = null, lastTemp = null; // lastTemp = {c, ohms, mv}
+  let useF = false;
+  let dirty = true;
+
+  // ---------- helpers ----------
+  const num = (id, fallback) => { const v = parseFloat($(id).value); return Number.isFinite(v) ? v : fallback; };
+  const toUnit = c => useF ? c * 9 / 5 + 32 : c;
+  const unitSym = () => useF ? "°F" : "°C";
+  const elapsed = now => { if (t0 === null) t0 = now; return (now - t0) / 1000; };
+  function setStatus(text, kind) { $("statusText").textContent = text; $("status").className = "status" + (kind ? " " + kind : ""); }
+  function showNotice(html) { const n = $("notice"); n.innerHTML = html; n.hidden = !html; }
+  function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+  function trim(arrs) { if (arrs[0].length > MAX_POINTS) arrs.forEach(a => a.splice(0, 10000)); }
+
+  function updateButtons() {
+    $("connectBtn").textContent = port ? "Disconnect" : "Connect to ESP32";
+    $("tareBtn").disabled = !(port && ready) || tareTimer !== null;
+    $("csvBtn").disabled = log.length === 0;
+  }
+
+  // ---------- console ----------
+  const consoleEl = $("console");
+  const consoleLines = [];
+  let consoleDirty = false;
+  function logLine(text) {
+    consoleLines.push(text);
+    if (consoleLines.length > 300) consoleLines.splice(0, consoleLines.length - 300);
+    consoleDirty = true;
+  }
+
+  // ---------- protocol ----------
+  function setReady(msg) { ready = true; setStatus(msg, "live"); updateButtons(); }
+
+  function handleLine(line) {
+    if (!line) return;
+    logLine(line);
+    if (!line.startsWith("@")) return;
+    const parts = line.split(",");
+    const tag = parts[0];
+    const now = performance.now();
+
+    if (tag === "@READY") {
+      setReady("ESP32 ready");
+    } else if (tag === "@DATA" && parts.length >= 2) {
+      const g = parseFloat(parts[1]);
+      if (!Number.isFinite(g)) return;
+      const s = elapsed(now);
+      wT.push(s); wV.push(g); trim([wT, wV]);
+      lastWeight = g;
+      log.push([new Date().toISOString(), s.toFixed(3), g.toFixed(2), "", "", ""]);
+      if (!ready) setReady("ESP32 connected");
+      firstData();
+    } else if (tag === "@TEMP" && parts.length >= 4) {
+      const c = parseFloat(parts[1]), ohms = parseFloat(parts[2]), mv = parseFloat(parts[3]);
+      const s = elapsed(now);
+      const cv = Number.isFinite(c) ? c : NaN;
+      tT.push(s); tV.push(cv); trim([tT, tV]);
+      lastTemp = { c: cv, ohms, mv };
+      log.push([new Date().toISOString(), s.toFixed(3), "",
+        Number.isFinite(c) ? c.toFixed(2) : "", Number.isFinite(ohms) ? ohms.toFixed(0) : "", Number.isFinite(mv) ? mv.toFixed(0) : ""]);
+      firstData();
+    } else if (tag === "@TARE" && parts.length >= 2) {
+      clearTareTimer();
+      if (parts[1] === "OK") setStatus("Zeroed", "live");
+      else setStatus("Tare failed: " + (parts.slice(2).join(",") || "unknown error"), "err");
+      updateButtons();
+    } else if (tag === "@ERROR") {
+      setStatus("ESP32: " + (parts.slice(1).join(",") || "error"), "err");
+    }
+    dirty = true;
+  }
+
+  function firstData() {
+    if (!$("empty").hidden) { $("empty").hidden = true; }
+    if (log.length === 1) updateButtons();
+  }
+
+  // ---------- serial ----------
+  async function connect() {
+    if (!("serial" in navigator)) {
+      showNotice("This browser can’t talk to USB serial devices. Open this file in <strong>Chrome or Edge on a computer</strong>.");
+      return;
+    }
+    try {
+      port = await navigator.serial.requestPort();
+    } catch (e) {
+      if (e && e.name === "SecurityError") {
+        showNotice("The browser blocked serial access. Save this file to your computer and open it directly in Chrome or Edge.");
+      }
+      port = null; return;
+    }
+    try {
+      await port.open({ baudRate: BAUD });
+    } catch (e) {
+      showNotice("Couldn’t open the port: " + escapeHtml(e.message || e) + ". Close the Arduino Serial Monitor or any other program using it, then try again.");
+      setStatus("Port busy", "err");
+      port = null; updateButtons(); return;
+    }
+    showNotice("");
+    ready = false;
+    setStatus("Connected. Waiting for data from the ESP32…", "live");
+    updateButtons();
+    readLoop();
+  }
+
+  async function readLoop() {
+    keepReading = true;
+    const decoder = new TextDecoderStream();
+    pipeDone = port.readable.pipeTo(decoder.writable).catch(() => {});
+    reader = decoder.readable.getReader();
+    let buf = "";
+    try {
+      while (keepReading) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += value;
+        let i;
+        while ((i = buf.indexOf("\n")) >= 0) {
+          handleLine(buf.slice(0, i).replace(/\r$/, "").trim());
+          buf = buf.slice(i + 1);
+        }
+        if (buf.length > 4096) buf = buf.slice(-1024);
+      }
+    } catch (e) {
+      if (keepReading) setStatus("Connection lost", "err");
+    } finally {
+      try { reader.releaseLock(); } catch (_) {}
+    }
+  }
+
+  async function disconnect(text = "Not connected", kind) {
+    keepReading = false;
+    clearTareTimer();
+    try { if (reader) await reader.cancel(); } catch (_) {}
+    try { if (pipeDone) await pipeDone; } catch (_) {}
+    try { if (port) await port.close(); } catch (_) {}
+    port = null; reader = null; pipeDone = null; ready = false;
+    setStatus(text, kind);
+    updateButtons();
+  }
+
+  async function send(text) {
+    if (!port || !port.writable) throw new Error("not connected");
+    const writer = port.writable.getWriter();
+    try { await writer.write(new TextEncoder().encode(text)); }
+    finally { writer.releaseLock(); }
+  }
+
+  if ("serial" in navigator) {
+    navigator.serial.addEventListener("disconnect", e => {
+      if (port && e.target === port) disconnect("ESP32 unplugged", "err");
+    });
+  }
+
+  // ---------- tare ----------
+  function clearTareTimer() { if (tareTimer !== null) { clearTimeout(tareTimer); tareTimer = null; } }
+  async function requestTare() {
+    if (!port || !ready) return;
+    try { await send("TARE\n"); }
+    catch (e) { setStatus("Couldn’t send tare", "err"); return; }
+    setStatus("Taring. Keep the scale empty and still…", "live");
+    tareTimer = setTimeout(() => {
+      tareTimer = null;
+      setStatus("Tare timed out. Check the HX711 connection.", "err");
+      updateButtons();
+    }, TARE_TIMEOUT_MS);
+    updateButtons();
+  }
+
+  // ---------- buttons ----------
+  $("connectBtn").addEventListener("click", () => port ? disconnect() : connect());
+  $("tareBtn").addEventListener("click", requestTare);
+  function setUnit(f) {
+    useF = f;
+    $("unitC").setAttribute("aria-pressed", String(!f));
+    $("unitF").setAttribute("aria-pressed", String(f));
+    $("tempLabel").textContent = "Temperature (" + unitSym() + ")";
+    dirty = true;
+  }
+  $("unitC").addEventListener("click", () => setUnit(false));
+  $("unitF").addEventListener("click", () => setUnit(true));
+  $("window").addEventListener("input", () => dirty = true);
+  $("pause").addEventListener("change", () => dirty = true);
+  $("clearBtn").addEventListener("click", () => {
+    [wT, wV, tT, tV, log].forEach(a => a.length = 0);
+    t0 = null;
+    $("empty").hidden = false;
+    dirty = true; updateButtons();
+  });
+  $("csvBtn").addEventListener("click", () => {
+    if (!log.length) return;
+    const rows = ["timestamp,elapsed_s,weight_g,temp_c,thermistor_ohms,adc_mv", ...log.map(r => r.join(","))];
+    const d = new Date(), p = n => String(n).padStart(2, "0");
+    const name = `espresso_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.csv`;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([rows.join("\n")], { type: "text/csv" }));
+    a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  });
+
+  // ---------- charts ----------
+  function makeChart(id) {
+    const canvas = $(id), ctx = canvas.getContext("2d"), c = { canvas, ctx, W: 0, H: 0 };
+    new ResizeObserver(() => {
+      const r = canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+      c.W = r.width; c.H = r.height;
+      canvas.width = Math.round(c.W * dpr); canvas.height = Math.round(c.H * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      dirty = true;
+    }).observe(canvas);
+    return c;
+  }
+  const weightChart = makeChart("weightChart");
+  const tempChart = makeChart("tempChart");
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => dirty = true);
+
+  const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  function niceStep(span, target) {
+    const raw = span / target, p = Math.pow(10, Math.floor(Math.log10(raw))), m = raw / p;
+    return (m < 1.5 ? 1 : m < 3 ? 2 : m < 7 ? 5 : 10) * p;
+  }
+
+  function windowStart(times, tEnd, win) {
+    let i = times.length;
+    while (i > 0 && times[i - 1] >= tEnd - win) i--;
+    return i;
+  }
+
+  function drawChart(ch, times, vals, start, xMin, xMax, color, map, minSpan) {
+    const { ctx, W, H } = ch;
+    if (!W || !H) return null;
+    let yMin = Infinity, yMax = -Infinity, sum = 0, n = 0;
+    for (let i = start; i < vals.length; i++) {
+      const v = map(vals[i]);
+      if (!Number.isFinite(v)) continue;
+      if (v < yMin) yMin = v; if (v > yMax) yMax = v; sum += v; n++;
+    }
+    const stats = n ? { min: yMin, max: yMax, avg: sum / n } : null;
+    if (!n) { yMin = 0; yMax = 1; }
+    if (yMax - yMin < minSpan) { const mid = (yMax + yMin) / 2; yMin = mid - minSpan / 2; yMax = mid + minSpan / 2; }
+    const pad = (yMax - yMin) * 0.1; yMin -= pad; yMax += pad;
+
+    const ink = cssVar("--muted"), grid = cssVar("--grid");
+    ctx.clearRect(0, 0, W, H);
+    ctx.font = '12px "IBM Plex Sans", system-ui, sans-serif';
+    const yStep = niceStep(yMax - yMin, Math.max(3, Math.floor(H / 55)));
+    const dec = Math.max(0, -Math.floor(Math.log10(yStep)));
+    const ticks = []; let labelW = 0;
+    for (let v = Math.ceil(yMin / yStep) * yStep; v <= yMax; v += yStep) {
+      const s = v.toFixed(dec); ticks.push([v, s]); labelW = Math.max(labelW, ctx.measureText(s).width);
+    }
+    const L = Math.max(44, Math.ceil(labelW) + 18), R = 14, T = 12, B = 28;
+    const pw = Math.max(10, W - L - R), ph = Math.max(10, H - T - B);
+    const X = t => L + (t - xMin) / (xMax - xMin) * pw;
+    const Y = v => T + (1 - (v - yMin) / (yMax - yMin)) * ph;
+
+    ctx.strokeStyle = grid; ctx.lineWidth = 1; ctx.fillStyle = ink;
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    for (const [v, s] of ticks) {
+      const y = Math.round(Y(v)) + 0.5;
+      ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(L + pw, y); ctx.stroke();
+      ctx.fillText(s, L - 8, y);
+    }
+    const xStep = niceStep(xMax - xMin, Math.max(3, Math.floor(pw / 90)));
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    for (let t = Math.ceil(xMin / xStep) * xStep; t <= xMax + 1e-9; t += xStep) {
+      const x = Math.round(X(t)) + 0.5;
+      ctx.beginPath(); ctx.moveTo(x, T); ctx.lineTo(x, T + ph); ctx.stroke();
+      ctx.fillText(+t.toFixed(3) + " s", x, T + ph + 7);
+    }
+
+    if (n) {
+      ctx.save();
+      ctx.beginPath(); ctx.rect(L, T, pw, ph); ctx.clip();
+      ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineJoin = "round";
+      ctx.beginPath();
+      let pen = false;
+      for (let i = start; i < vals.length; i++) {
+        const v = map(vals[i]);
+        if (!Number.isFinite(v)) { pen = false; continue; }
+        const x = X(times[i]), y = Y(v);
+        pen ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+        pen = true;
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+    return stats;
+  }
+
+  function setBig(el, text, unit, mode) {
+    el.className = "big" + (mode ? " " + mode : "");
+    el.textContent = text;
+    if (unit) { const s = document.createElement("span"); s.className = "unit"; s.textContent = unit; el.appendChild(s); }
+  }
+
+  function render() {
+    if (consoleDirty) {
+      const atBottom = consoleEl.scrollTop + consoleEl.clientHeight >= consoleEl.scrollHeight - 4;
+      consoleEl.textContent = consoleLines.join("\n");
+      if (atBottom) consoleEl.scrollTop = consoleEl.scrollHeight;
+      consoleDirty = false;
+    }
+    if (!dirty) return;
+    dirty = false;
+    const u = unitSym();
+
+    if (lastWeight === null) setBig($("weightBig"), "—", "", "idle");
+    else setBig($("weightBig"), lastWeight.toFixed(1), "g");
+
+    if (lastTemp === null) setBig($("tempBig"), "—", "", "idle");
+    else if (!Number.isFinite(lastTemp.c)) setBig($("tempBig"), "Check wiring", "", "fault");
+    else setBig($("tempBig"), toUnit(lastTemp.c).toFixed(1), u);
+
+    $("tOhms").textContent = lastTemp && Number.isFinite(lastTemp.ohms) ? (lastTemp.ohms / 1000).toFixed(1) + " kΩ" : "—";
+    $("tMv").textContent = lastTemp && Number.isFinite(lastTemp.mv) ? lastTemp.mv.toFixed(0) + " mV" : "—";
+
+    if ($("pause").checked && (wT.length || tT.length)) return;
+
+    const win = Math.max(5, num("window", 60));
+    const tEnd = Math.max(wT.length ? wT[wT.length - 1] : 0, tT.length ? tT[tT.length - 1] : 0);
+    const xMin = Math.max(0, tEnd - win), xMax = xMin + win;
+
+    const ws = drawChart(weightChart, wT, wV, windowStart(wT, tEnd, win), xMin, xMax, cssVar("--signal"), v => v, 2);
+    const ts = drawChart(tempChart, tT, tV, windowStart(tT, tEnd, win), xMin, xMax, cssVar("--heat"), toUnit, 2);
+
+    $("wMin").textContent = ws ? ws.min.toFixed(1) + " g" : "—";
+    $("wMax").textContent = ws ? ws.max.toFixed(1) + " g" : "—";
+    $("wAvg").textContent = ws ? ws.avg.toFixed(1) + " g" : "—";
+    $("tMin").textContent = ts ? ts.min.toFixed(1) + " " + u : "—";
+    $("tMax").textContent = ts ? ts.max.toFixed(1) + " " + u : "—";
+    $("tAvg").textContent = ts ? ts.avg.toFixed(1) + " " + u : "—";
+  }
+
+  (function frame() { render(); requestAnimationFrame(frame); })();
+
+  if (!("serial" in navigator)) {
+    showNotice("This browser can’t talk to USB serial devices. Open this file in <strong>Chrome or Edge on a computer</strong>.");
+    $("connectBtn").disabled = true;
+  }
+  updateButtons();
+})();
+</script>
+</body>
+</html>
